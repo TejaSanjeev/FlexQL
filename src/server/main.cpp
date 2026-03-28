@@ -14,14 +14,14 @@ void handle_client(int client_fd, flexql::storage::Database& db) {
     while (true) {
         std::string query;
         while (true) {
-            memset(buffer, 0, sizeof(buffer));
-            ssize_t bytes_read = read(client_fd, buffer, sizeof(buffer) - 1);
+            ssize_t bytes_read = read(client_fd, buffer, sizeof(buffer) - 1);   
             if (bytes_read <= 0) break;
             
-            query += buffer;
-            if (query.find(';') != std::string::npos) break;
+            buffer[bytes_read] = '\0';
+            query.append(buffer, bytes_read);
+            if (strchr(buffer, ';') != nullptr) break;
         }
-        
+
         if (query.empty()) {
             // Client disconnected
             break;

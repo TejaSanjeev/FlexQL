@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++17 -pthread -I./include
+CXXFLAGS = -std=c++17 -pthread -I./include -O3 -march=native
 
 SERVER_SRC = src/network/tcp_server.cpp \
              src/concurrency/thread_pool.cpp \

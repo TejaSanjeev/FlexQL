@@ -16,8 +16,10 @@ std::string Parser::trim(const std::string& str) {
 SQLStatement Parser::parse(const std::string& query) {
     SQLStatement stmt;
     std::string q = trim(query);
-    std::string upper_q = q;
-    std::transform(upper_q.begin(), upper_q.end(), upper_q.begin(), ::toupper);
+    
+    // Check type prefix
+    std::string upper_q = q.substr(0, std::min<size_t>(100, q.length()));
+    std::transform(upper_q.begin(), upper_q.end(), upper_q.begin(), ::toupper); 
 
     // --- DELETE ---
     if (upper_q.find("DELETE FROM ") == 0) {
@@ -31,11 +33,11 @@ SQLStatement Parser::parse(const std::string& query) {
     if (upper_q.find("CREATE TABLE ") == 0) {
         stmt.type = StmtType::CREATE;
         size_t name_start = 13;
-        if (upper_q.find("CREATE TABLE IF NOT EXISTS ") == 0) name_start = 27;
-        
+        if (upper_q.find("CREATE TABLE IF NOT EXISTS ") == 0) name_start = 27;  
+
         size_t paren_start = q.find('(', name_start);
-        stmt.table_name = trim(q.substr(name_start, paren_start - name_start));
-        
+        stmt.table_name = trim(q.substr(name_start, paren_start - name_start)); 
+
         std::string cols_str = q.substr(paren_start + 1, q.find_last_of(')') - paren_start - 1);
         std::stringstream ss(cols_str);
         std::string col_def;
@@ -52,26 +54,59 @@ SQLStatement Parser::parse(const std::string& query) {
     if (upper_q.find("INSERT INTO ") == 0 || upper_q.find("INSERT ") == 0) {
         stmt.type = StmtType::INSERT;
         size_t table_start = upper_q.find("INTO ") != std::string::npos ? upper_q.find("INTO ") + 5 : 7;
-        size_t values_pos = upper_q.find(" VALUES");
+        
+        size_t values_pos = -1;
+        for (size_t i = table_start; i < q.length() - 6; ++i) {
+            if (toupper(q[i]) == 'V' && toupper(q[i+1]) == 'A' && toupper(q[i+2]) == 'L' && 
+                toupper(q[i+3]) == 'U' && toupper(q[i+4]) == 'E' && toupper(q[i+5]) == 'S') {
+                values_pos = i;
+                break;
+            }
+        }
+        
         stmt.table_name = trim(q.substr(table_start, values_pos - table_start));
 
-        std::string val_str = q.substr(values_pos + 7);
-        size_t s = 0;
-        // Parse multi-row inserts (1, 'A'), (2, 'B')
-        while ((s = val_str.find('(', s)) != std::string::npos) {
-            size_t e = val_str.find(')', s);
-            if (e == std::string::npos) break;
-            std::string row_str = val_str.substr(s + 1, e - s - 1);
-            
+        const char* p = q.data() + values_pos + 6;
+        const char* end = q.data() + q.size();
+        
+        stmt.insert_values_list.reserve(6000); // Prevent reallocation for massive batches
+
+        while (p < end) {
+            while (p < end && *p != '(') p++;
+            if (p >= end) break;
+            p++; // skip '('
+
             std::vector<std::string> row_vals;
-            std::stringstream ss(row_str);
-            std::string val;
-            while (std::getline(ss, val, ',')) {
-                row_vals.push_back(trim(val));
+            row_vals.reserve(10); // reserve a little to prevent reallocation
+
+            while (p < end && *p != ')') {
+                while (p < end && std::isspace((unsigned char)*p)) p++;
+                if (p >= end || *p == ')') break;
+
+                bool in_quotes = (*p == '\'');
+                const char* val_start = p;
+                if (in_quotes) {
+                    val_start++;
+                    p++;
+                    while (p < end && *p != '\'') p++;
+                } else {
+                    while (p < end && *p != ',' && *p != ')' && !std::isspace((unsigned char)*p)) p++;
+                }
+
+                row_vals.emplace_back(val_start, p - val_start);
+
+                if (in_quotes && p < end && *p == '\'') p++;
+                while (p < end && std::isspace((unsigned char)*p)) p++;
+                if (p < end && *p == ',') p++;
             }
-            stmt.insert_values_list.push_back(row_vals);
-            if (stmt.insert_values.empty()) stmt.insert_values = row_vals; // Legacy
-            s = e + 1;
+            if (!row_vals.empty()) {
+                stmt.insert_values_list.push_back(std::move(row_vals));
+            }
+            if (p < end && *p == ')') p++;
+        }
+
+        if (!stmt.insert_values_list.empty()) {
+            stmt.insert_values = stmt.insert_values_list[0];
         }
         return stmt;
     }
@@ -80,6 +115,9 @@ SQLStatement Parser::parse(const std::string& query) {
     if (upper_q.find("SELECT ") == 0) {
         stmt.type = StmtType::SELECT;
         
+        upper_q = q;
+        std::transform(upper_q.begin(), upper_q.end(), upper_q.begin(), ::toupper);
+
         // 1. Extract ORDER BY
         size_t order_idx = upper_q.find(" ORDER BY ");
         if (order_idx != std::string::npos) {
@@ -104,13 +142,13 @@ SQLStatement Parser::parse(const std::string& query) {
             stmt.has_where = true;
             std::string where_str = trim(q.substr(where_idx + 7));
             q = q.substr(0, where_idx);
-            
+
             std::vector<std::string> ops = {">=", "<=", "!=", "=", ">", "<"};
             for (const auto& op : ops) {
                 size_t op_pos = where_str.find(op);
                 if (op_pos != std::string::npos) {
                     stmt.where_operator = op;
-                    stmt.where_column = trim(where_str.substr(0, op_pos));
+                    stmt.where_column = trim(where_str.substr(0, op_pos));      
                     stmt.where_value = trim(where_str.substr(op_pos + op.length()));
                     break;
                 }
@@ -129,17 +167,15 @@ SQLStatement Parser::parse(const std::string& query) {
         if (join_idx != std::string::npos) {
             stmt.has_join = true;
             stmt.table_name = trim(q.substr(from_idx + 6, join_idx - (from_idx + 6)));
-            
             size_t on_idx = upper_q.find(" ON ", join_idx);
             stmt.join_table = trim(q.substr(join_idx + 12, on_idx - (join_idx + 12)));
-            
             std::string on_cond = trim(q.substr(on_idx + 4));
-            std::vector<std::string> ops = {">=", "<=", "!=", "=", ">", "<"};
+            std::vector<std::string> ops = {">=", "<=", "!=", "=", ">", "<"};   
             for (const auto& op : ops) {
                 size_t op_pos = on_cond.find(op);
                 if (op_pos != std::string::npos) {
                     stmt.join_operator = op;
-                    stmt.join_left_col = trim(on_cond.substr(0, op_pos));
+                    stmt.join_left_col = trim(on_cond.substr(0, op_pos));       
                     stmt.join_right_col = trim(on_cond.substr(op_pos + op.length()));
                     break;
                 }
@@ -149,7 +185,7 @@ SQLStatement Parser::parse(const std::string& query) {
         }
         return stmt;
     }
-    
+
     throw std::runtime_error("Unsupported query type");
 }
 

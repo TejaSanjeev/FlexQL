@@ -22,7 +22,7 @@ public:
 
     // FIX: Restored original public APIs and bool return types
     bool create_table(const parser::SQLStatement& stmt, const std::string& raw_query);
-    bool insert_into(const parser::SQLStatement& stmt);
+    bool insert_into(parser::SQLStatement& stmt);
     std::string select_from(const parser::SQLStatement& stmt);
     bool delete_from(const parser::SQLStatement& stmt);
 

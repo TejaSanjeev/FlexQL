@@ -66,7 +66,7 @@ bool Database::create_table(const parser::SQLStatement& stmt, const std::string&
     return true;
 }
 
-bool Database::insert_into(const parser::SQLStatement& stmt) {
+bool Database::insert_into(parser::SQLStatement& stmt) {
     {
         std::lock_guard<std::mutex> cache_lock(cache_mutex_);
         query_cache_.clear();
@@ -83,9 +83,8 @@ bool Database::insert_into(const parser::SQLStatement& stmt) {
     }
 
     bool success = true;
-    // Loop through Multi-Row batches for the new benchmark!
-    for (const auto& row_vals : stmt.insert_values_list) {
-        if (!table->insert_row(row_vals)) success = false;
+    if (!stmt.insert_values_list.empty()) {
+        success = table->insert_rows(stmt.insert_values_list);
     }
 
     // Complete durability: only save master page if we really need to track new pages.
