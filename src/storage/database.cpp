@@ -127,10 +127,12 @@ std::string Database::select_from(const parser::SQLStatement& stmt) {
 
     {
         std::lock_guard<std::mutex> cache_lock(cache_mutex_);
-        if (query_cache_.find(cache_key) != query_cache_.end()) {
-            lru_cache_list_.remove(cache_key);
+        auto it = query_cache_.find(cache_key);
+        if (it != query_cache_.end()) {
+            lru_cache_list_.erase(it->second.second);
             lru_cache_list_.push_front(cache_key);
-            return query_cache_[cache_key]; 
+            it->second.second = lru_cache_list_.begin();
+            return it->second.first;
         }
     }
 
@@ -253,8 +255,8 @@ std::string Database::select_from(const parser::SQLStatement& stmt) {
             lru_cache_list_.pop_back();
             query_cache_.erase(oldest);
         }
-        query_cache_[cache_key] = result_string;
         lru_cache_list_.push_front(cache_key);
+        query_cache_[cache_key] = {result_string, lru_cache_list_.begin()};
     }
 
     return result_string;

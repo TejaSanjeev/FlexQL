@@ -35,5 +35,5 @@ benchmark:
 	$(CXX) $(CXXFLAGS) $(BENCHMARK_SRC) -o bin/flexql-benchmark
 
 clean:
-	rm -rf bin/* flexql.db
+	rm -rf bin/* flexql.db data/tables/* data/indexes/* data/wal/*
 

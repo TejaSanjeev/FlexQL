@@ -7,10 +7,14 @@ namespace flexql {
 namespace parser {
 
 std::string Parser::trim(const std::string& str) {
-    size_t first = str.find_first_not_of(" \t\r\n'\"");
+    size_t first = str.find_first_not_of(" \t\r\n");
     if (std::string::npos == first) return "";
-    size_t last = str.find_last_not_of(" \t\r\n'\"\";");
-    return str.substr(first, (last - first + 1));
+    size_t last = str.find_last_not_of(" \t\r\n;");
+    std::string res = str.substr(first, (last - first + 1));
+    if (res.length() >= 2 && ((res.front() == '\'' && res.back() == '\'') || (res.front() == '"' && res.back() == '"'))) {
+        res = res.substr(1, res.length() - 2);
+    }
+    return res;
 }
 
 SQLStatement Parser::parse(const std::string& query) {

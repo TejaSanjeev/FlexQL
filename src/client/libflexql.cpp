@@ -123,28 +123,31 @@ int flexql_exec(FlexQL *db, const char *sql, int (*callback)(void*, int, char**,
             
             int colCount = colNames.size();
             if (colCount > 0) {
-                // To match the reference benchmark expectations seamlessly, 
-                // we reconstruct the row as a space-separated string and pass it as a single column.
-                std::string joined_row;
+                std::vector<char*> c_names(colCount);
+                std::vector<char*> c_vals(colCount);
+
                 for (int i = 0; i < colCount; i++) {
-                    if (i > 0) joined_row += " ";
-                    joined_row += colVals[i];
+                    c_names[i] = strdup(colNames[i].c_str());
+                    c_vals[i] = strdup(colVals[i].c_str());
                 }
 
-                char* c_names[1];
-                char* c_vals[1];
-                c_names[0] = strdup("row");
-                c_vals[0] = strdup(joined_row.c_str());
+                // Actually pass multiple columns instead of argc=1 hack
+                callback(arg, colCount, c_vals.data(), c_names.data());
 
-                callback(arg, 1, c_vals, c_names);
-
-                free(c_names[0]);
-                free(c_vals[0]);
+                for (int i = 0; i < colCount; i++) {
+                    free(c_names[i]);
+                    free(c_vals[i]);
+                }
             }
         }
     } else {
         // Handle informational messages cleanly ("Table created successfully", "No rows found.")
-        std::cout << response; 
+        while (!response.empty() && (response.back() == '\n' || response.back() == '\r')) {
+            response.pop_back();
+        }
+        if (response != "OK") {
+            std::cout << response << "\n";
+        }
     }
 
     return FLEXQL_OK;

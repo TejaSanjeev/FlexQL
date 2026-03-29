@@ -9,6 +9,8 @@
 #include <memory>
 #include <functional>
 #include <unordered_map>
+#include <fstream>
+#include <filesystem>
 
 namespace flexql {
 namespace storage {
@@ -38,6 +40,13 @@ private:
     // In-Memory Fast Path
     std::vector<std::vector<std::string>> memory_rows_;
     std::unordered_map<std::string, size_t> memory_index_;
+
+    // Durable storage: snapshot-based persistence
+    std::string data_file_path_;
+    int pending_persist_rows_ = 0;
+
+    void load_from_disk();
+    void persist_to_disk();
 };
 
 }

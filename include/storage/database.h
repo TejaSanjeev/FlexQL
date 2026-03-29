@@ -39,7 +39,7 @@ private:
     std::shared_mutex catalog_latch_;
 
     // Query Result Cache (LRU)
-    std::unordered_map<std::string, std::string> query_cache_;
+    std::unordered_map<std::string, std::pair<std::string, std::list<std::string>::iterator>> query_cache_;
     std::list<std::string> lru_cache_list_;
     std::mutex cache_mutex_;
     const size_t MAX_CACHE_SIZE = 500;

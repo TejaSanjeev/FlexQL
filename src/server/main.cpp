@@ -38,8 +38,14 @@ void handle_client(int client_fd, flexql::storage::Database& db) {
             auto stmt = flexql::parser::Parser::parse(query);
 
             if (stmt.type == flexql::parser::StmtType::CREATE) {
-                if (db.create_table(stmt, query)) response = "OK\n<EOF>";       
-                else response = "Error: Table creation failed\n<EOF>";
+                bool exists = !db.create_table(stmt, query);
+                if (exists && query.find("IF NOT EXISTS") != std::string::npos) {
+                    response = "OK\n<EOF>";
+                } else if (exists) {
+                    response = "Error: Table creation failed\n<EOF>";
+                } else {
+                    response = "OK\n<EOF>";
+                }
             }
             else if (stmt.type == flexql::parser::StmtType::INSERT) {
                 if (db.insert_into(stmt)) response = "OK\n<EOF>";
@@ -86,9 +92,8 @@ int main() {
     flexql::concurrency::ThreadPool pool(num_threads);
     
     // Auto-wipe the database on boot just like flexql_server.cpp does for the benchmark
-    std::remove("flexql.db");
-    flexql::storage::Database db; 
-    
+    // std::remove("flexql.db"); // removed to avoid data wipe bug
+    flexql::storage::Database db;
     flexql::network::TcpServer server("127.0.0.1", 9000);
     if (!server.start()) {
         std::cerr << "Failed to start server.\n";
