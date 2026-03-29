@@ -4,6 +4,7 @@
 #include <cstring>
 #include <algorithm>
 #include <unordered_set>
+#include <filesystem>
 
 namespace flexql {
 namespace storage {
@@ -13,16 +14,77 @@ Database::Database(const std::string& db_name, int buffer_pool_size)
     disk_manager_ = std::make_unique<DiskManager>(db_name_);
     bpm_ = std::make_unique<BufferPoolManager>(buffer_pool_size, disk_manager_.get());
     load_master_page();
+
+    std::filesystem::create_directories("data/wal");
+
+    // Open WAL for appending
+    wal_file_.open("data/wal/flexql.wal", std::ios::app);
+    recover_from_wal();
 }
 
 Database::~Database() {
+    flush_wal();
+    if (wal_file_.is_open()) {
+        wal_file_.close();
+    }
     save_master_page();
     if (bpm_) {
         bpm_->flush_all_pages();
     }
 }
 
-bool Database::delete_from(const parser::SQLStatement& stmt) {
+void Database::append_to_wal(const std::string& query) {
+    if (is_recovering_ || query.empty()) return;
+    
+    std::lock_guard<std::mutex> lock(wal_mutex_);
+    wal_buffer_.push_back(query);
+    
+    // Asynchronous threshold flush (every 100 queries or so)
+    if (wal_buffer_.size() >= 100) {
+        for (const auto& q : wal_buffer_) {
+            wal_file_ << q << "\n";
+        }
+        wal_buffer_.clear();
+        // Wait to actually fsync
+        // wal_file_.flush(); 
+    }
+}
+
+void Database::flush_wal() {
+    std::lock_guard<std::mutex> lock(wal_mutex_);
+    if (!wal_buffer_.empty()) {
+        for (const auto& q : wal_buffer_) {
+            wal_file_ << q << "\n";
+        }
+        wal_buffer_.clear();
+    }
+    if (wal_file_.is_open()) {
+        wal_file_.flush();
+    }
+}
+
+void Database::recover_from_wal() {
+    is_recovering_ = true;
+    std::ifstream in_wal("data/wal/flexql.wal");
+    if (in_wal.is_open()) {
+        std::string line;
+        while (std::getline(in_wal, line)) {
+            if (line.empty()) continue;
+            try {
+                auto stmt = parser::Parser::parse(line);
+                if (stmt.type == parser::StmtType::CREATE) create_table(stmt, line);
+                else if (stmt.type == parser::StmtType::INSERT) insert_into(stmt, line);
+                else if (stmt.type == parser::StmtType::DELETE) delete_from(stmt, line);
+            } catch (...) {
+                // Ignore parse errors from corrupted lines
+            }
+        }
+        in_wal.close();
+    }
+    is_recovering_ = false;
+}
+
+bool Database::delete_from(const parser::SQLStatement& stmt, const std::string& raw_query) {
     std::shared_ptr<Table> table;
     {
         std::shared_lock<std::shared_mutex> lock(catalog_latch_);
@@ -39,6 +101,7 @@ bool Database::delete_from(const parser::SQLStatement& stmt) {
     
     if (table->delete_all_data()) {
         save_master_page();
+        append_to_wal(raw_query);
         return true;
     }
     return false;
@@ -60,13 +123,14 @@ bool Database::create_table(const parser::SQLStatement& stmt, const std::string&
     tables_[stmt.table_name] = std::make_shared<Table>(stmt.table_name, stmt.columns, bpm_.get(), -1);
     table_schemas_[stmt.table_name] = raw_query;
 
-    lock.unlock(); 
+    lock.unlock();
     save_master_page();
-    
+    append_to_wal(raw_query);
+
     return true;
 }
 
-bool Database::insert_into(parser::SQLStatement& stmt) {
+bool Database::insert_into(parser::SQLStatement& stmt, const std::string& raw_query) {
     {
         std::lock_guard<std::mutex> cache_lock(cache_mutex_);
         query_cache_.clear();
@@ -91,6 +155,10 @@ bool Database::insert_into(parser::SQLStatement& stmt) {
     // The buffer pool will flush pages automatically when full.
     if (table->just_allocated_new_page()) {
         save_master_page();
+    }
+
+    if (success) {
+        append_to_wal(raw_query);
     }
 
     return success;

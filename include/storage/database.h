@@ -6,6 +6,8 @@
 #include <shared_mutex>
 #include <mutex>
 #include <list>
+#include <vector>
+#include <fstream>
 #include "storage/table.h"
 #include "storage/buffer_pool.h"
 #include "storage/disk_manager.h"
@@ -22,9 +24,14 @@ public:
 
     // FIX: Restored original public APIs and bool return types
     bool create_table(const parser::SQLStatement& stmt, const std::string& raw_query);
-    bool insert_into(parser::SQLStatement& stmt);
+    bool insert_into(parser::SQLStatement& stmt, const std::string& raw_query = "");
     std::string select_from(const parser::SQLStatement& stmt);
-    bool delete_from(const parser::SQLStatement& stmt);
+    bool delete_from(const parser::SQLStatement& stmt, const std::string& raw_query = "");
+
+    // Asynchronous WAL
+    void append_to_wal(const std::string& query);
+    void flush_wal();
+    void recover_from_wal();
 
 private:
     void save_master_page();
@@ -43,6 +50,12 @@ private:
     std::list<std::string> lru_cache_list_;
     std::mutex cache_mutex_;
     const size_t MAX_CACHE_SIZE = 500;
+
+    // Async WAL structures
+    std::vector<std::string> wal_buffer_;
+    std::mutex wal_mutex_;
+    std::ofstream wal_file_;
+    bool is_recovering_ = false;
 };
 
 } // namespace storage

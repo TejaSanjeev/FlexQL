@@ -48,11 +48,11 @@ void handle_client(int client_fd, flexql::storage::Database& db) {
                 }
             }
             else if (stmt.type == flexql::parser::StmtType::INSERT) {
-                if (db.insert_into(stmt)) response = "OK\n<EOF>";
+                if (db.insert_into(stmt, query)) response = "OK\n<EOF>";
                 else response = "Error: Insert failed\n<EOF>";
             }
             else if (stmt.type == flexql::parser::StmtType::DELETE) {
-                if (db.delete_from(stmt)) response = "OK\n<EOF>";
+                if (db.delete_from(stmt, query)) response = "OK\n<EOF>";
                 else response = "Error: Delete failed\n<EOF>";
             }
             else if (stmt.type == flexql::parser::StmtType::SELECT) {
