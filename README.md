@@ -118,7 +118,3 @@ Note: performance numbers can vary across runs depending on CPU scheduling, back
 - `data/wal/*`
 
 
-## Notes
-- External database libraries are not used.
-- Server is intended for localhost benchmark/testing workflow (`127.0.0.1:9000` default).
-- For implementation details and trade-offs, see `design_document.tex`.
