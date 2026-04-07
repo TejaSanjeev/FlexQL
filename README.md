@@ -1,7 +1,5 @@
 # FlexQL
 
-GitHub Repository: https://github.com/your-username/flexql-project
-
 FlexQL is a SQL-like client-server database driver written in C++.
 It supports a focused relational subset with persistent storage, WAL-based recovery, indexing, caching, and multithreaded request handling.
 
