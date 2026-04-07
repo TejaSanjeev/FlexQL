@@ -3,6 +3,9 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#if defined(__linux__) || defined(__APPLE__)
+#include <netinet/tcp.h>
+#endif
 #include <cstring>
 
 namespace flexql {
@@ -30,6 +33,15 @@ bool TcpServer::start() {
         std::cerr << "Setsockopt failed.\n";
         return false;
     }
+
+#ifdef SO_REUSEPORT
+    setsockopt(server_fd_, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+#endif
+
+#ifdef TCP_NODELAY
+    int nodelay = 1;
+    setsockopt(server_fd_, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
+#endif
 
     // 3. Bind socket to IP and Port
     address_.sin_family = AF_INET;
@@ -62,6 +74,11 @@ int TcpServer::accept_connection() {
     
     if (client_fd < 0) {
         std::cerr << "Failed to accept connection.\n";
+    } else {
+#ifdef TCP_NODELAY
+        int nodelay = 1;
+        setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
+#endif
     }
     return client_fd;
 }

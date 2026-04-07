@@ -8,7 +8,7 @@
 using namespace std;
 using namespace std::chrono;
 
-static const long long DEFAULT_INSERT_ROWS = 1000000LL;
+static const long long DEFAULT_INSERT_ROWS = 10000000LL;
 static const int INSERT_BATCH_SIZE = 5000;
 
 struct QueryStats {

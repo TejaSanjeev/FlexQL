@@ -25,11 +25,14 @@ enum class DataType {
 struct ColumnDef {
     std::string name;
     std::string type;
+    bool is_primary_key = false;
+    bool is_auto_injected = false;
 };
 
 struct SQLStatement {
     StmtType type = StmtType::UNKNOWN;
     std::string table_name;
+    bool create_if_not_exists = false;
     std::vector<ColumnDef> columns;
     std::vector<std::string> insert_values;
     std::vector<std::vector<std::string>> insert_values_list; // Multi-row

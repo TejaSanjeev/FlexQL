@@ -7,14 +7,31 @@
 #include <sys/socket.h>
 #include <cstring>
 #include <thread>
+#include <cctype>
+#include <vector>
+
+namespace {
+bool starts_with_keyword_ci(const std::string& text, const char* keyword) {
+    size_t pos = text.find_first_not_of(" \t\r\n");
+    if (pos == std::string::npos) return false;
+    for (size_t i = 0; keyword[i] != '\0'; ++i) {
+        if (pos + i >= text.size()) return false;
+        if (std::toupper(static_cast<unsigned char>(text[pos + i])) != keyword[i]) return false;
+    }
+    return true;
+}
+}
 
 void handle_client(int client_fd, flexql::storage::Database& db) {
-    char buffer[65536];
+    std::vector<char> read_buffer(8 * 1024 * 1024);
+    char* buffer = read_buffer.data();
+    size_t buffer_cap = read_buffer.size();
     
     while (true) {
         std::string query;
+        query.reserve(256 * 1024);
         while (true) {
-            ssize_t bytes_read = read(client_fd, buffer, sizeof(buffer) - 1);   
+            ssize_t bytes_read = read(client_fd, buffer, buffer_cap - 1);
             if (bytes_read <= 0) break;
             
             buffer[bytes_read] = '\0';
@@ -35,11 +52,15 @@ void handle_client(int client_fd, flexql::storage::Database& db) {
 
         std::string response;
         try {
+            if (starts_with_keyword_ci(query, "INSERT")) {
+                if (db.insert_into_raw_sql(query)) response = "OK\n<EOF>";
+                else response = "Error: Insert failed\n<EOF>";
+            } else {
             auto stmt = flexql::parser::Parser::parse(query);
 
             if (stmt.type == flexql::parser::StmtType::CREATE) {
                 bool exists = !db.create_table(stmt, query);
-                if (exists && query.find("IF NOT EXISTS") != std::string::npos) {
+                if (exists && stmt.create_if_not_exists) {
                     response = "OK\n<EOF>";
                 } else if (exists) {
                     response = "Error: Table creation failed\n<EOF>";
@@ -67,6 +88,7 @@ void handle_client(int client_fd, flexql::storage::Database& db) {
             }
             else {
                 response = "Error: Unknown command\n<EOF>";
+            }
             }
         } catch (const std::exception& e) {
             response = std::string("Error: ") + e.what() + "\n<EOF>";

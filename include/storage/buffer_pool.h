@@ -24,6 +24,9 @@ public:
     
     // Tell the pool we are done using the page
     bool unpin_page(int page_id, bool is_dirty);
+
+    // Flush one page if it is resident and dirty.
+    bool flush_page(int page_id);
     
     // Force all dirty pages to disk (useful for safe shutdowns)
     void flush_all_pages();
@@ -42,6 +45,7 @@ private:
 
     std::unordered_map<int, size_t> page_table_; // Maps page_id to frame index
     std::list<size_t> lru_list_; // Tracks least recently used frames
+    std::unordered_map<size_t, std::list<size_t>::iterator> lru_map_; // O(1) frame promotion
 
     std::mutex latch_;
 

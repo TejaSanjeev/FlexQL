@@ -5,11 +5,9 @@ SERVER_SRC = src/network/tcp_server.cpp \
              src/concurrency/thread_pool.cpp \
              src/parser/parser.cpp \
              src/storage/page.cpp \
-             src/storage/index/b_plus_tree.cpp \
-             src/storage/index/b_plus_tree_internal_page.cpp \
-             src/storage/index/b_plus_tree_leaf_page.cpp \
              src/storage/disk_manager.cpp \
              src/storage/buffer_pool.cpp \
+             src/storage/index.cpp \
              src/storage/table.cpp \
              src/storage/database.cpp \
              src/server/main.cpp

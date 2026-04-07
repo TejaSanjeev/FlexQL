@@ -2,6 +2,47 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <stdexcept>
+
+namespace {
+std::vector<std::string> split_top_level_commas(const std::string& input) {
+    std::vector<std::string> parts;
+    size_t start = 0;
+    int paren_depth = 0;
+    bool in_single_quote = false;
+    bool in_double_quote = false;
+
+    for (size_t i = 0; i < input.size(); ++i) {
+        char c = input[i];
+
+        if (c == '\'' && !in_double_quote) {
+            in_single_quote = !in_single_quote;
+            continue;
+        }
+        if (c == '"' && !in_single_quote) {
+            in_double_quote = !in_double_quote;
+            continue;
+        }
+
+        if (in_single_quote || in_double_quote) continue;
+
+        if (c == '(') {
+            paren_depth++;
+        } else if (c == ')' && paren_depth > 0) {
+            paren_depth--;
+        } else if (c == ',' && paren_depth == 0) {
+            parts.push_back(input.substr(start, i - start));
+            start = i + 1;
+        }
+    }
+
+    if (start <= input.size()) {
+        parts.push_back(input.substr(start));
+    }
+
+    return parts;
+}
+}
 
 namespace flexql {
 namespace parser {
@@ -37,18 +78,31 @@ SQLStatement Parser::parse(const std::string& query) {
     if (upper_q.find("CREATE TABLE ") == 0) {
         stmt.type = StmtType::CREATE;
         size_t name_start = 13;
-        if (upper_q.find("CREATE TABLE IF NOT EXISTS ") == 0) name_start = 27;  
+        if (upper_q.find("CREATE TABLE IF NOT EXISTS ") == 0) {
+            name_start = 27;
+            stmt.create_if_not_exists = true;
+        }
 
         size_t paren_start = q.find('(', name_start);
         stmt.table_name = trim(q.substr(name_start, paren_start - name_start)); 
 
         std::string cols_str = q.substr(paren_start + 1, q.find_last_of(')') - paren_start - 1);
-        std::stringstream ss(cols_str);
-        std::string col_def;
-        while (std::getline(ss, col_def, ',')) {
-            std::stringstream css(trim(col_def));
+        auto col_defs = split_top_level_commas(cols_str);
+        for (const auto& col_def_raw : col_defs) {
+            std::string col_def = trim(col_def_raw);
+            if (col_def.empty()) continue;
+
+            std::stringstream css(col_def);
             ColumnDef def;
             css >> def.name >> def.type;
+            if (def.name.empty() || def.type.empty()) {
+                throw std::runtime_error("Invalid column definition");
+            }
+            std::string upper_col_def = col_def;
+            std::transform(upper_col_def.begin(), upper_col_def.end(), upper_col_def.begin(), ::toupper);
+            if (upper_col_def.find("PRIMARY KEY") != std::string::npos) {
+                def.is_primary_key = true;
+            }
             stmt.columns.push_back(def);
         }
         return stmt;
@@ -59,13 +113,16 @@ SQLStatement Parser::parse(const std::string& query) {
         stmt.type = StmtType::INSERT;
         size_t table_start = upper_q.find("INTO ") != std::string::npos ? upper_q.find("INTO ") + 5 : 7;
         
-        size_t values_pos = -1;
+        size_t values_pos = std::string::npos;
         for (size_t i = table_start; i < q.length() - 6; ++i) {
             if (toupper(q[i]) == 'V' && toupper(q[i+1]) == 'A' && toupper(q[i+2]) == 'L' && 
                 toupper(q[i+3]) == 'U' && toupper(q[i+4]) == 'E' && toupper(q[i+5]) == 'S') {
                 values_pos = i;
                 break;
             }
+        }
+        if (values_pos == std::string::npos) {
+            throw std::runtime_error("Invalid INSERT syntax");
         }
         
         stmt.table_name = trim(q.substr(table_start, values_pos - table_start));

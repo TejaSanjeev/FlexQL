@@ -11,7 +11,10 @@ BufferPoolManager::BufferPoolManager(size_t pool_size, DiskManager* disk_manager
     frames_.resize(pool_size_);
     for (size_t i = 0; i < pool_size_; ++i) {
         pages_[i] = new Page();
-        lru_list_.push_back(i); 
+        lru_list_.push_back(i);
+        auto it = lru_list_.end();
+        --it;
+        lru_map_[i] = it;
     }
 }
 
@@ -23,8 +26,12 @@ BufferPoolManager::~BufferPoolManager() {
 }
 
 void BufferPoolManager::update_lru(size_t frame_id) {
-    lru_list_.remove(frame_id);
-    lru_list_.push_front(frame_id); 
+    auto map_it = lru_map_.find(frame_id);
+    if (map_it != lru_map_.end()) {
+        lru_list_.erase(map_it->second);
+    }
+    lru_list_.push_front(frame_id);
+    lru_map_[frame_id] = lru_list_.begin();
 }
 
 bool BufferPoolManager::find_victim_frame(size_t* out_frame_id) {
@@ -113,6 +120,19 @@ bool BufferPoolManager::unpin_page(int page_id, bool is_dirty) {
     frames_[frame_id].pin_count--;
     if (is_dirty) frames_[frame_id].is_dirty = true;
     
+    return true;
+}
+
+bool BufferPoolManager::flush_page(int page_id) {
+    std::lock_guard<std::mutex> lock(latch_);
+    auto it = page_table_.find(page_id);
+    if (it == page_table_.end()) return false;
+
+    size_t frame_id = it->second;
+    if (frames_[frame_id].is_dirty) {
+        disk_manager_->write_page(page_id, pages_[frame_id]->get_raw_data());
+        frames_[frame_id].is_dirty = false;
+    }
     return true;
 }
 
